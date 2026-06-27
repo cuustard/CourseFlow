@@ -13,23 +13,31 @@ type AssessmentFilter = "all" | "exam" | "coursework";
 
 export default function HomePage() {
     const [showForm, setShowForm] = useState(false);
-    const [assessmentItems, setAssessmentItems] = useState<Assessment[]>(() => {
+    // Start from the seed so server and first client render match (avoids a
+    // hydration mismatch); persisted data is loaded in the effect below.
+    const [assessmentItems, setAssessmentItems] = useState<Assessment[]>(initialAssessments);
+    const [hydrated, setHydrated] = useState(false);
+
+    // Load any persisted assessments after mount.
+    useEffect(() => {
         try {
             const saved = localStorage.getItem(STORAGE_KEY);
-            if (saved) return JSON.parse(saved) as Assessment[];
+            if (saved) setAssessmentItems(JSON.parse(saved) as Assessment[]);
         } catch {
-            // localStorage unavailable (SSR, private mode, etc.)
+            // localStorage unavailable (private mode, etc.)
         }
-        return initialAssessments;
-    });
+        setHydrated(true);
+    }, []);
 
     useEffect(() => {
+        // Don't overwrite storage until we've loaded from it.
+        if (!hydrated) return;
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(assessmentItems));
         } catch {
             // ignore write failures
         }
-    }, [assessmentItems]);
+    }, [assessmentItems, hydrated]);
 
     const [typeFilter, setTypeFilter] = useState<AssessmentFilter>("all");
     const [moduleFilter, setModuleFilter] = useState<string>("all");
