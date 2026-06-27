@@ -1,11 +1,134 @@
 @import "tailwindcss";
 
-html,
-body {
-    margin: 0;
-    padding: 0;
+:root {
+    --font-family-sans: var(--font-dm-sans), sans-serif;
+    --font-family-mono: var(--font-dm-mono), monospace;
+    --bg: #0a0a0b;
+    --bg2: #111113;
+    --bg3: #1a1a1d;
+    --bg4: #222226;
+    --border: #2a2a2f;
+    --border2: #3a3a40;
+    --text: #e8e6e1;
+    --text2: #a8a5a0;
+    --text3: #6b6866;
+    --accent: #7c6ee0;
+    --accent2: #5a4fc0;
+    --green: #3d9970;
+    --amber: #d4843a;
+    --red: #c0392b;
+    --blue: #3a7bd5;
 }
 
 * {
     box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-dm-sans), "DM Sans", sans-serif;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: var(--border2);
+    border-radius: 3px;
+}
+
+/* Shared input style */
+.gt-input {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 8px 12px;
+    font-size: 13px;
+    font-family: var(--font-dm-sans), sans-serif;
+    outline: none;
+    transition: border-color 0.15s;
+}
+.gt-input:focus {
+    border-color: var(--accent);
+}
+.gt-input::placeholder {
+    color: var(--text3);
+}
+.gt-input option {
+    background: #1a1a1d;
+}
+
+/* Shared button styles */
+.gt-btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s;
+    font-family: var(--font-dm-sans), sans-serif;
+    background: var(--accent);
+    color: #fff;
+}
+.gt-btn-primary:hover {
+    background: var(--accent2);
+}
+
+.gt-btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: var(--font-dm-sans), sans-serif;
+    background: transparent;
+    color: var(--text2);
+    border: 1px solid var(--border);
+}
+.gt-btn-ghost:hover {
+    background: var(--bg3);
+    color: var(--text);
+}
+
+.gt-btn-danger {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: var(--font-dm-sans), sans-serif;
+    background: transparent;
+    color: var(--red);
+    border: 1px solid var(--border);
+}
+.gt-btn-danger:hover {
+    background: #c0392b20;
+}
+
+.gt-btn-sm {
+    padding: 5px 10px !important;
+    font-size: 11px !important;
 }
