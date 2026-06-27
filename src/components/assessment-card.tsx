@@ -11,7 +11,7 @@ type AssessmentCardProps = {
 };
 
 function isSoon(date: string) {
-    return getDaysUntil(date) <= 3;
+    return Math.floor(getDaysUntil(date)) <= 3;
 }
 
 export default function AssessmentCard({

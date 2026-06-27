@@ -1,22 +1,23 @@
-import { modules } from "@/data/mock-data";
 import { getDaysUntil } from "@/lib/assessment-helpers";
-import type { TimelineItem } from "@/types";
+import type { Module, TimelineItem } from "@/types";
 import ModuleBadge from "./module-badge";
 
 type TimelineListProps = {
     items: TimelineItem[];
+    modules: Module[];
 };
 
 function getTimelineStatusLabel(dueAt: string) {
     const daysUntil = getDaysUntil(dueAt);
+    const wholeDays = Math.floor(daysUntil);
 
     if (daysUntil < 0) return "Overdue";
-    if (daysUntil <= 1) return "Due soon";
-    if (daysUntil <= 7) return "This week";
+    if (wholeDays <= 1) return "Due soon";
+    if (wholeDays <= 7) return "This week";
     return "Later";
 }
 
-export default function TimelineList({ items }: TimelineListProps) {
+export default function TimelineList({ items, modules }: TimelineListProps) {
     return (
         <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
