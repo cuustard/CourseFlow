@@ -2,13 +2,12 @@
 
 import { useRef } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import type { Deadline, Module } from "@/lib/types";
+import type { Deadline } from "@/lib/types";
 import { moduleColor } from "@/lib/moduleColors";
 import ModuleBadge from "./ModuleBadge";
 
 type GanttPlannerProps = {
     deadlines: Deadline[];
-    modules: Module[];
 };
 
 function startOfDay(date: Date) {
@@ -49,17 +48,6 @@ function formatWeekday(date: Date) {
 /** Earliest meaningful point for a deadline — where its bar/marker begins. */
 function getDeadlineStartDate(deadline: Deadline) {
     if (deadline.type === "exam") return new Date(deadline.endDate);
-
-    if (deadline.subComponents.length) {
-        return new Date(
-            [...deadline.subComponents].sort(
-                (a, b) =>
-                    new Date(a.dueDate).getTime() -
-                    new Date(b.dueDate).getTime(),
-            )[0].dueDate,
-        );
-    }
-
     return new Date(deadline.startDate ?? deadline.endDate);
 }
 
@@ -89,7 +77,7 @@ function getRange(deadlines: Deadline[]) {
     };
 }
 
-export default function GanttPlanner({ deadlines, modules }: GanttPlannerProps) {
+export default function GanttPlanner({ deadlines }: GanttPlannerProps) {
     const scrollRef = useRef<HTMLDivElement>(null);
     const { start, end } = getRange(deadlines);
 
@@ -231,14 +219,11 @@ export default function GanttPlanner({ deadlines, modules }: GanttPlannerProps) 
                             className="py-10 text-center text-[13px]"
                             style={{ color: "var(--text3)" }}
                         >
-                            No deadlines to display. Add one above.
+                            No dated assessments to display.
                         </div>
                     )}
 
                     {deadlines.map((d) => {
-                        const moduleData = modules.find(
-                            (m) => m.id === d.moduleId,
-                        );
                         const color = moduleColor(d.moduleId);
 
                         const startDate = getDeadlineStartDate(d);
@@ -285,12 +270,10 @@ export default function GanttPlanner({ deadlines, modules }: GanttPlannerProps) 
                                             {d.type}
                                         </span>
                                     </div>
-                                    {moduleData && (
-                                        <ModuleBadge
-                                            name={moduleData.name}
-                                            color={color}
-                                        />
-                                    )}
+                                    <ModuleBadge
+                                        name={d.moduleName}
+                                        color={color}
+                                    />
                                 </div>
 
                                 {/* Timeline column */}
@@ -354,7 +337,7 @@ export default function GanttPlanner({ deadlines, modules }: GanttPlannerProps) 
                                         />
                                     )}
 
-                                    {/* Sub-component dots */}
+                                    {/* Milestone dots */}
                                     {d.subComponents.map((c) => {
                                         const offset = diffInDays(
                                             start,
@@ -369,20 +352,14 @@ export default function GanttPlanner({ deadlines, modules }: GanttPlannerProps) 
                                                         offset * dayWidth +
                                                         dayWidth / 2 -
                                                         6,
-                                                    backgroundColor:
-                                                        c.isCompleted
-                                                            ? "var(--green)"
-                                                            : color,
+                                                    backgroundColor: color,
                                                     border: "2px solid var(--bg2)",
-                                                    opacity: c.isCompleted
-                                                        ? 0.85
-                                                        : 1,
                                                 }}
-                                                title={`${c.title}${
-                                                    c.isCompleted
-                                                        ? " (done)"
-                                                        : ""
-                                                }`}
+                                                title={
+                                                    c.weight > 0
+                                                        ? `${c.title} (${c.weight}%)`
+                                                        : c.title
+                                                }
                                             />
                                         );
                                     })}

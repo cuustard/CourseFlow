@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useAcademicStore } from "@/store/useAcademicStore";
+import { Settings2 } from "lucide-react";
+import {
+    useAcademicStore,
+    useTimelineDeadlines,
+} from "@/store/useAcademicStore";
 import { nextUrgentMoment } from "@/lib/timelineUtils";
-import type { Deadline } from "@/lib/types";
 import SummaryCard from "./SummaryCard";
-import AddDeadlineForm from "./AddDeadlineForm";
 import GanttPlanner from "./GanttPlanner";
 import DeadlineList from "./DeadlineList";
 
@@ -14,25 +17,29 @@ type TypeFilter = "all" | "exam" | "coursework";
 
 export default function TimelineView() {
     const searchParams = useSearchParams();
-    const deadlines = useAcademicStore((s) => s.deadlines);
     const modules = useAcademicStore((s) => s.modules);
-    const deadlinesLoaded = useAcademicStore((s) => s.deadlinesLoaded);
-    const addDeadline = useAcademicStore((s) => s.addDeadline);
+    const modulesLoaded = useAcademicStore((s) => s.modulesLoaded);
+
+    // Read-only projection of the modules collection — the single source of truth.
+    const deadlines = useTimelineDeadlines();
 
     const moduleParam = searchParams.get("module");
 
-    const [showForm, setShowForm] = useState(false);
     const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
     const [moduleFilter, setModuleFilter] = useState<string>(
-        () => moduleParam ?? "all",
+        moduleParam ?? "all",
     );
 
-    // Keep the module filter in sync with the `?module=` deep link so that
-    // "View on timeline" actions land on the right module even when the
-    // timeline page is already mounted (e.g. browser back/forward navigation).
-    useEffect(() => {
+    // Keep the module filter in sync with the `?module=` deep link without an
+    // effect (React's "adjust state during render" pattern): when the param
+    // changes — arriving from a "View on timeline" link or back/forward
+    // navigation — reset the filter to match. Manual dropdown selections
+    // persist until the param next changes.
+    const [syncedParam, setSyncedParam] = useState(moduleParam);
+    if (moduleParam !== syncedParam) {
+        setSyncedParam(moduleParam);
         setModuleFilter(moduleParam ?? "all");
-    }, [moduleParam]);
+    }
 
     const filtered = useMemo(() => {
         return deadlines
@@ -44,7 +51,7 @@ export default function TimelineView() {
 
     const { modulesInView, next } = useMemo(() => {
         const ids = new Set<string>();
-        for (const d of filtered) ids.add(d.moduleId ?? "__unlinked__");
+        for (const d of filtered) ids.add(d.moduleId);
         return {
             modulesInView: ids.size,
             next: nextUrgentMoment(filtered),
@@ -55,11 +62,6 @@ export default function TimelineView() {
         moduleFilter !== "all"
             ? (modules.find((m) => m.id === moduleFilter)?.name ?? null)
             : null;
-
-    function handleAddDeadline(deadline: Omit<Deadline, "id" | "createdAt">) {
-        void addDeadline(deadline);
-        setShowForm(false);
-    }
 
     const filtersActive = typeFilter !== "all" || moduleFilter !== "all";
 
@@ -75,8 +77,8 @@ export default function TimelineView() {
                         className="text-[13px]"
                         style={{ color: "var(--text2)" }}
                     >
-                        Visualise exams, coursework and multi-part submissions
-                        in one place.
+                        A read-only view of every exam and coursework deadline,
+                        built from your modules.
                         {activeModuleName && (
                             <>
                                 {" "}
@@ -90,25 +92,11 @@ export default function TimelineView() {
                     </p>
                 </div>
 
-                {!showForm && (
-                    <button
-                        onClick={() => setShowForm(true)}
-                        className="gt-btn-primary shrink-0"
-                    >
-                        + Add deadline
-                    </button>
-                )}
+                {/* Source of truth lives in Modules — route there to make changes */}
+                <Link href="/modules" className="gt-btn-primary shrink-0">
+                    <Settings2 size={14} /> Manage Modules
+                </Link>
             </div>
-
-            {/* Collapsible add form */}
-            {showForm && (
-                <AddDeadlineForm
-                    modules={modules}
-                    defaultModuleId={moduleFilter}
-                    onAddDeadline={handleAddDeadline}
-                    onClose={() => setShowForm(false)}
-                />
-            )}
 
             {/* Filters */}
             <section
@@ -186,7 +174,9 @@ export default function TimelineView() {
                     value={filtered.length}
                     helperText={
                         filtered.length === 0
-                            ? "Try clearing your filters."
+                            ? modules.length === 0
+                                ? "Add a module and assessment dates first."
+                                : "Try clearing your filters."
                             : undefined
                     }
                 />
@@ -209,13 +199,42 @@ export default function TimelineView() {
                 />
             </section>
 
+            {/* Empty-state nudge when no assessment carries a date yet */}
+            {modulesLoaded && deadlines.length === 0 && (
+                <div
+                    className="rounded-[10px] p-6 mb-5 text-center"
+                    style={{
+                        background: "var(--bg2)",
+                        border: "1px dashed var(--border2)",
+                    }}
+                >
+                    <div className="text-[28px] mb-2">🗓️</div>
+                    <div className="text-[13px]" style={{ color: "var(--text2)" }}>
+                        Nothing scheduled yet
+                    </div>
+                    <div
+                        className="text-[12px] mt-1"
+                        style={{ color: "var(--text3)" }}
+                    >
+                        Add exam or coursework dates to your assessments and they
+                        appear here automatically.
+                    </div>
+                    <Link
+                        href="/modules"
+                        className="gt-btn-ghost gt-btn-sm mt-4 justify-center inline-flex"
+                    >
+                        <Settings2 size={12} /> Go to Modules
+                    </Link>
+                </div>
+            )}
+
             {/* Gantt planner */}
-            <GanttPlanner deadlines={filtered} modules={modules} />
+            <GanttPlanner deadlines={filtered} />
 
-            {/* Deadline list — completion toggles + delete */}
-            <DeadlineList deadlines={filtered} modules={modules} />
+            {/* Deadline detail list — read-only */}
+            <DeadlineList deadlines={filtered} />
 
-            {!deadlinesLoaded && (
+            {!modulesLoaded && (
                 <p
                     className="text-[12px] mt-6"
                     style={{ color: "var(--text3)" }}

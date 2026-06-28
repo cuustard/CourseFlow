@@ -11,9 +11,33 @@ import {
 import { useAcademicStore } from "@/store/useAcademicStore";
 import AddAssessmentModal from "./AddAssessmentModal";
 import EnterGradeModal from "./EnterGradeModal";
+import type { Assessment } from "@/lib/types";
 
 interface Props {
     module: Module;
+}
+
+function shortDate(iso: string): string {
+    return new Date(iso).toLocaleDateString(undefined, {
+        day: "numeric",
+        month: "short",
+    });
+}
+
+/** Compact timeline-date summary shown under an assessment name. */
+function assessmentDateLabel(a: Assessment): string | null {
+    if (a.type === "exam") {
+        return a.examDate ? `Exam · ${shortDate(a.examDate)}` : null;
+    }
+    const parts: string[] = [];
+    if (a.dueDate) parts.push(`Due ${shortDate(a.dueDate)}`);
+    if (a.milestones.length)
+        parts.push(
+            `${a.milestones.length} milestone${
+                a.milestones.length === 1 ? "" : "s"
+            }`,
+        );
+    return parts.length ? parts.join(" · ") : null;
 }
 
 export default function ModuleCard({ module }: Props) {
@@ -202,7 +226,19 @@ export default function ModuleCard({ module }: Props) {
                                                 }}
                                             >
                                                 <td className="py-2.5 px-3">
-                                                    {a.name}
+                                                    <div>{a.name}</div>
+                                                    {assessmentDateLabel(a) && (
+                                                        <div
+                                                            className="text-[11px] mt-0.5"
+                                                            style={{
+                                                                color: "var(--text3)",
+                                                            }}
+                                                        >
+                                                            {assessmentDateLabel(
+                                                                a,
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </td>
                                                 <td className="py-2.5 px-3">
                                                     <span

@@ -1,25 +1,45 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Unified domain model for the merged GradeTrack + CourseFlow application.
+// Unified domain model.
 //
-//   GradeTrack  → Modules, each holding weighted Assessments (grade tracking)
-//   CourseFlow  → Deadlines, optionally linked to a Module (timeline planning)
+// Modules and their assessments are the ABSOLUTE source of truth. The timeline
+// is a pure, read-only projection derived from this data (see modulesToTimeline
+// in timelineUtils) — there is no separately persisted deadlines collection.
 //
-// In-memory dates are ISO 8601 strings; they are converted to/from Firestore
-// Timestamps at the store boundary (see src/store/useAcademicStore.ts).
+// In-memory dates are ISO 8601 strings; they are stored as Firestore Timestamps
+// inside the module document and converted at the store boundary
+// (see src/store/useAcademicStore.ts).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type AssessmentType = "coursework" | "exam";
 export type GradeType = "letter" | "pct";
 
-// ── GradeTrack ───────────────────────────────────────────────────────────────
+// ── GradeTrack (persisted: users/{uid}/modules/{moduleId}) ───────────────────
+
+/**
+ * A tracking sub-component of a coursework assessment (e.g. Proposal, Draft).
+ * `weight` is a planning/display breakdown of the parent coursework and does
+ * NOT feed the Lancaster aggregation, which is driven by Assessment.weight.
+ */
+export interface Milestone {
+    id: string;
+    title: string;
+    dueDate: string; // ISO string
+    weight: number; // % within the parent coursework (display only)
+}
 
 export interface Assessment {
     id: string;
     name: string;
     type: AssessmentType;
-    weight: number; // % within its module
+    weight: number; // % within its module — drives the Lancaster aggregation
     grade: string | number | null; // letter string or % number; null = not yet received
     gradeType: GradeType | null;
+
+    // Timeline dates — the module/assessment record is the single source of truth.
+    examDate?: string | null; // exam only — the sitting date/time
+    startDate?: string | null; // coursework only — optional planning start
+    dueDate?: string | null; // coursework only — the final due date/time
+    milestones: Milestone[]; // coursework sub-components ([] for exams)
 }
 
 export interface Module {
@@ -33,40 +53,41 @@ export interface Module {
     createdAt?: number;
 }
 
-// ── CourseFlow (deadlines) ───────────────────────────────────────────────────
+// ── Derived timeline view types (built from modules; never persisted alone) ──
 
+/** A coursework milestone projected onto the timeline. */
 export interface SubComponent {
     id: string;
     title: string;
     dueDate: string; // ISO string
-    isCompleted: boolean;
+    weight: number;
 }
 
+/**
+ * A single bar/marker on the Gantt timeline, derived from one assessment.
+ * Read-only — to change anything here, edit the owning module/assessment.
+ */
 export interface Deadline {
-    id: string;
-    title: string;
+    id: string; // `${moduleId}:${assessmentId}`
+    assessmentId: string;
+    moduleId: string;
+    moduleName: string;
+    title: string; // the assessment name
     type: AssessmentType;
-    /** Optional planning start; null for point-in-time items such as exams. */
     startDate: string | null; // ISO string | null
-    /** The primary deadline. */
-    endDate: string; // ISO string
+    endDate: string; // ISO string — exam date or coursework final due
     subComponents: SubComponent[];
-    /** Optional explicit link to a GradeTrack module. */
-    moduleId: string | null;
-    /** Sort key — millisecond epoch the deadline was created. */
-    createdAt?: number;
 }
 
 /** A single point on the timeline once a Deadline is flattened. */
 export interface TimelineMoment {
     id: string;
     deadlineId: string;
-    moduleId: string | null;
+    moduleId: string;
     deadlineTitle: string;
     title: string;
     dueAt: string; // ISO string
     kind: "exam" | "coursework" | "component";
-    isCompleted: boolean;
 }
 
 // ── Grade-calculation helper shapes (Lancaster Appendix 1 & 2) ────────────────

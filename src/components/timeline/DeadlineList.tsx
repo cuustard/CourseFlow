@@ -1,21 +1,15 @@
 "use client";
 
-import { Check, Trash2 } from "lucide-react";
-import { useAcademicStore } from "@/store/useAcademicStore";
 import { relativeLabel } from "@/lib/timelineUtils";
 import { moduleColor } from "@/lib/moduleColors";
-import type { Deadline, Module } from "@/lib/types";
+import type { Deadline } from "@/lib/types";
 import ModuleBadge from "./ModuleBadge";
 
 type DeadlineListProps = {
     deadlines: Deadline[];
-    modules: Module[];
 };
 
-export default function DeadlineList({ deadlines, modules }: DeadlineListProps) {
-    const toggleSubComponent = useAcademicStore((s) => s.toggleSubComponent);
-    const removeDeadline = useAcademicStore((s) => s.removeDeadline);
-
+export default function DeadlineList({ deadlines }: DeadlineListProps) {
     if (deadlines.length === 0) return null;
 
     return (
@@ -26,7 +20,6 @@ export default function DeadlineList({ deadlines, modules }: DeadlineListProps) 
 
             <div className="space-y-3">
                 {deadlines.map((d) => {
-                    const moduleData = modules.find((m) => m.id === d.moduleId);
                     const color = moduleColor(d.moduleId);
 
                     return (
@@ -53,12 +46,10 @@ export default function DeadlineList({ deadlines, modules }: DeadlineListProps) 
                                         >
                                             {d.type}
                                         </span>
-                                        {moduleData && (
-                                            <ModuleBadge
-                                                name={moduleData.name}
-                                                color={color}
-                                            />
-                                        )}
+                                        <ModuleBadge
+                                            name={d.moduleName}
+                                            color={color}
+                                        />
                                     </div>
 
                                     <div
@@ -70,25 +61,9 @@ export default function DeadlineList({ deadlines, modules }: DeadlineListProps) 
                                         {relativeLabel(d.endDate)}
                                     </div>
                                 </div>
-
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        if (
-                                            confirm(
-                                                `Remove "${d.title}" from your timeline?`,
-                                            )
-                                        )
-                                            void removeDeadline(d.id);
-                                    }}
-                                    className="gt-btn-danger gt-btn-sm shrink-0"
-                                    aria-label={`Remove ${d.title}`}
-                                >
-                                    <Trash2 size={12} />
-                                </button>
                             </div>
 
-                            {/* Sub-component completion toggles */}
+                            {/* Milestones — read-only */}
                             {d.subComponents.length > 0 && (
                                 <div
                                     className="mt-3 pt-3 flex flex-wrap gap-2"
@@ -97,65 +72,29 @@ export default function DeadlineList({ deadlines, modules }: DeadlineListProps) 
                                     }}
                                 >
                                     {d.subComponents.map((sub) => (
-                                        <button
+                                        <span
                                             key={sub.id}
-                                            type="button"
-                                            onClick={() =>
-                                                void toggleSubComponent(
-                                                    d.id,
-                                                    sub.id,
-                                                )
-                                            }
-                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] transition-colors"
+                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px]"
                                             style={{
-                                                background: sub.isCompleted
-                                                    ? "var(--green)" + "20"
-                                                    : "var(--bg3)",
-                                                border: `1px solid ${
-                                                    sub.isCompleted
-                                                        ? "var(--green)" + "50"
-                                                        : "var(--border)"
-                                                }`,
-                                                color: sub.isCompleted
-                                                    ? "var(--green)"
-                                                    : "var(--text2)",
+                                                background: "var(--bg3)",
+                                                border: "1px solid var(--border)",
+                                                color: "var(--text2)",
                                             }}
-                                            title={
-                                                sub.isCompleted
-                                                    ? "Mark as not done"
-                                                    : "Mark as done"
-                                            }
                                         >
                                             <span
-                                                className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full"
-                                                style={{
-                                                    border: `1px solid ${
-                                                        sub.isCompleted
-                                                            ? "var(--green)"
-                                                            : "var(--border2)"
-                                                    }`,
-                                                    background: sub.isCompleted
-                                                        ? "var(--green)"
-                                                        : "transparent",
-                                                }}
-                                            >
-                                                {sub.isCompleted && (
-                                                    <Check
-                                                        size={9}
-                                                        color="#fff"
-                                                    />
-                                                )}
-                                            </span>
-                                            <span
-                                                style={{
-                                                    textDecoration:
-                                                        sub.isCompleted
-                                                            ? "line-through"
-                                                            : "none",
-                                                }}
-                                            >
-                                                {sub.title}
-                                            </span>
+                                                className="inline-block w-1.5 h-1.5 rounded-full"
+                                                style={{ background: color }}
+                                            />
+                                            <span>{sub.title}</span>
+                                            {sub.weight > 0 && (
+                                                <span
+                                                    style={{
+                                                        color: "var(--text3)",
+                                                    }}
+                                                >
+                                                    {sub.weight}%
+                                                </span>
+                                            )}
                                             <span
                                                 style={{
                                                     color: "var(--text3)",
@@ -168,7 +107,7 @@ export default function DeadlineList({ deadlines, modules }: DeadlineListProps) 
                                                     month: "short",
                                                 })}
                                             </span>
-                                        </button>
+                                        </span>
                                     ))}
                                 </div>
                             )}

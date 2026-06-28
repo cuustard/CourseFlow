@@ -2,13 +2,16 @@
 
 import Link from "next/link";
 import { ArrowRight, CalendarClock } from "lucide-react";
-import { useAcademicStore } from "@/store/useAcademicStore";
+import {
+    useAcademicStore,
+    useTimelineDeadlines,
+} from "@/store/useAcademicStore";
 import { nextUrgentMoment, relativeLabel } from "@/lib/timelineUtils";
 import { moduleColor } from "@/lib/moduleColors";
 
 export default function NextDeadlineCard() {
-    const deadlines = useAcademicStore((s) => s.deadlines);
     const modules = useAcademicStore((s) => s.modules);
+    const deadlines = useTimelineDeadlines();
 
     const next = nextUrgentMoment(deadlines);
     const moduleName = next?.moduleId

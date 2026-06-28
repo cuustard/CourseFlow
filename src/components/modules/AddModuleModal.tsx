@@ -78,7 +78,7 @@ export function Overlay({
             onClick={onClose}
         >
             <div
-                className="rounded-xl p-6 w-[480px] max-w-[90vw]"
+                className="rounded-xl p-6 w-[480px] max-w-[90vw] max-h-[90vh] overflow-y-auto"
                 style={{
                     background: "var(--bg2)",
                     border: "1px solid var(--border2)",

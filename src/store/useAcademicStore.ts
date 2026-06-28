@@ -1,9 +1,9 @@
+import { useMemo } from "react";
 import { create } from "zustand";
 import {
     collection,
     deleteDoc,
     doc,
-    getDocs,
     onSnapshot,
     orderBy,
     query,
@@ -16,26 +16,29 @@ import {
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { getDb, getFirebaseAuth } from "@/lib/firebase";
 import { calcModuleAgg } from "@/lib/gradeUtils";
-import { EXAMPLE_DEADLINES, EXAMPLE_MODULES } from "@/lib/seed";
+import { modulesToTimeline } from "@/lib/timelineUtils";
 import type {
     Assessment,
     AssessmentType,
     Deadline,
     GradeType,
+    Milestone,
     Module,
-    SubComponent,
 } from "@/lib/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Consolidated global store for the merged application.
+// Consolidated global store.
 //
-//   • Auth     — Firebase Auth session is mirrored into the store on load.
-//   • Modules  — GradeTrack data, persisted at users/{uid}/modules/{moduleId}.
-//   • Deadlines— CourseFlow data, persisted at users/{uid}/deadlines/{id}.
+//   • Auth    — the Firebase Auth session is mirrored into the store on load.
+//   • Modules — the ABSOLUTE source of truth, persisted at
+//               users/{uid}/modules/{moduleId}. Each module embeds its weighted,
+//               graded assessments, and each assessment embeds its timeline
+//               dates + coursework milestones.
 //
-// Reads are driven by reactive Firestore onSnapshot listeners, so any change —
-// local mutation or a write from another device — re-renders the UI in real
-// time. Writes are fire-and-forget: the listener reflects them back into state.
+// The timeline is a pure projection of this data (useTimelineDeadlines) — there
+// is no separately persisted deadlines collection to keep in sync. A single
+// reactive onSnapshot listener on the modules collection drives the dashboard,
+// the modules views AND the Gantt timeline simultaneously.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface AuthUser {
@@ -50,9 +53,7 @@ interface AcademicState {
 
     // ── Data
     modules: Module[];
-    deadlines: Deadline[];
     modulesLoaded: boolean;
-    deadlinesLoaded: boolean;
     error: string | null;
 
     // ── Lifecycle
@@ -61,7 +62,7 @@ interface AcademicState {
     stopListening: () => void;
     logout: () => Promise<void>;
 
-    // ── Module / assessment mutations (GradeTrack)
+    // ── Module / assessment mutations (the single write surface)
     addModule: (name: string, credits: number) => Promise<void>;
     removeModule: (id: string) => Promise<void>;
     addAssessment: (
@@ -75,11 +76,6 @@ interface AcademicState {
         grade: string | number,
         gradeType: GradeType,
     ) => Promise<void>;
-
-    // ── Deadline mutations (CourseFlow)
-    addDeadline: (deadline: Omit<Deadline, "id" | "createdAt">) => Promise<void>;
-    removeDeadline: (id: string) => Promise<void>;
-    toggleSubComponent: (deadlineId: string, subId: string) => Promise<void>;
 }
 
 // ── Firestore path helpers ───────────────────────────────────────────────────
@@ -87,40 +83,37 @@ interface AcademicState {
 function modulesCol(uid: string): CollectionReference {
     return collection(getDb(), "users", uid, "modules");
 }
-function deadlinesCol(uid: string): CollectionReference {
-    return collection(getDb(), "users", uid, "deadlines");
-}
 function moduleDoc(uid: string, id: string): DocumentReference {
     return doc(getDb(), "users", uid, "modules", id);
-}
-function deadlineDoc(uid: string, id: string): DocumentReference {
-    return doc(getDb(), "users", uid, "deadlines", id);
 }
 
 // ── Document shapes (as persisted) ───────────────────────────────────────────
 
-interface ModuleDocData {
-    name: string;
-    credits: number;
-    assessments: Assessment[];
-    aggregation: number | null;
-    createdAt: number;
-}
-
-interface SubComponentDoc {
+interface MilestoneDoc {
     id: string;
     title: string;
     dueDate: Timestamp;
-    isCompleted: boolean;
+    weight: number;
 }
 
-interface DeadlineDocData {
-    title: string;
+interface AssessmentDoc {
+    id: string;
+    name: string;
     type: AssessmentType;
+    weight: number;
+    grade: string | number | null;
+    gradeType: GradeType | null;
+    examDate: Timestamp | null;
     startDate: Timestamp | null;
-    endDate: Timestamp;
-    subComponents: SubComponentDoc[];
-    moduleId: string | null;
+    dueDate: Timestamp | null;
+    milestones: MilestoneDoc[];
+}
+
+interface ModuleDocData {
+    name: string;
+    credits: number;
+    assessments: AssessmentDoc[];
+    aggregation: number | null;
     createdAt: number;
 }
 
@@ -142,10 +135,10 @@ function isoToTimestamp(iso: string): Timestamp {
     return Timestamp.fromDate(new Date(iso));
 }
 
-// ── Module converters ────────────────────────────────────────────────────────
+// ── Module / assessment converters ───────────────────────────────────────────
 
-function normaliseAssessment(a: Assessment): Assessment {
-    // Firestore rejects `undefined`; coerce optionals to null.
+function assessmentToDoc(a: Assessment): AssessmentDoc {
+    // Firestore rejects `undefined`; coerce every optional to a concrete value.
     return {
         id: a.id,
         name: a.name,
@@ -153,6 +146,36 @@ function normaliseAssessment(a: Assessment): Assessment {
         weight: a.weight,
         grade: a.grade ?? null,
         gradeType: a.gradeType ?? null,
+        examDate: a.examDate ? isoToTimestamp(a.examDate) : null,
+        startDate: a.startDate ? isoToTimestamp(a.startDate) : null,
+        dueDate: a.dueDate ? isoToTimestamp(a.dueDate) : null,
+        milestones: (a.milestones ?? []).map((m) => ({
+            id: m.id,
+            title: m.title,
+            weight: m.weight,
+            dueDate: isoToTimestamp(m.dueDate),
+        })),
+    };
+}
+
+function assessmentFromDoc(raw: AssessmentDoc): Assessment {
+    const milestones: Milestone[] = (raw.milestones ?? []).map((m) => ({
+        id: m.id,
+        title: m.title,
+        weight: m.weight ?? 0,
+        dueDate: toIso(m.dueDate),
+    }));
+    return {
+        id: raw.id,
+        name: raw.name,
+        type: raw.type,
+        weight: raw.weight,
+        grade: raw.grade ?? null,
+        gradeType: raw.gradeType ?? null,
+        examDate: toIsoNullable(raw.examDate),
+        startDate: toIsoNullable(raw.startDate),
+        dueDate: toIsoNullable(raw.dueDate),
+        milestones,
     };
 }
 
@@ -161,7 +184,7 @@ function moduleToDoc(m: Module): ModuleDocData {
     return {
         name: m.name,
         credits: m.credits,
-        assessments: m.assessments.map(normaliseAssessment),
+        assessments: m.assessments.map(assessmentToDoc),
         aggregation: result ? result.effectiveAgg : null,
         createdAt: m.createdAt ?? Date.now(),
     };
@@ -172,48 +195,8 @@ function docToModule(id: string, data: ModuleDocData): Module {
         id,
         name: data.name,
         credits: data.credits,
-        assessments: (data.assessments ?? []).map(normaliseAssessment),
+        assessments: (data.assessments ?? []).map(assessmentFromDoc),
         aggregation: data.aggregation ?? null,
-        createdAt: data.createdAt ?? 0,
-    };
-}
-
-// ── Deadline converters ──────────────────────────────────────────────────────
-
-function deadlineToDoc(d: Omit<Deadline, "id">): DeadlineDocData {
-    return {
-        title: d.title,
-        type: d.type,
-        startDate: d.startDate ? isoToTimestamp(d.startDate) : null,
-        endDate: isoToTimestamp(d.endDate),
-        subComponents: d.subComponents.map((s) => ({
-            id: s.id,
-            title: s.title,
-            dueDate: isoToTimestamp(s.dueDate),
-            isCompleted: s.isCompleted,
-        })),
-        moduleId: d.moduleId ?? null,
-        createdAt: d.createdAt ?? Date.now(),
-    };
-}
-
-function docToDeadline(id: string, data: DeadlineDocData): Deadline {
-    const subComponents: SubComponent[] = (data.subComponents ?? []).map(
-        (s) => ({
-            id: s.id,
-            title: s.title,
-            dueDate: toIso(s.dueDate),
-            isCompleted: !!s.isCompleted,
-        }),
-    );
-    return {
-        id,
-        title: data.title,
-        type: data.type,
-        startDate: toIsoNullable(data.startDate),
-        endDate: toIso(data.endDate),
-        subComponents,
-        moduleId: data.moduleId ?? null,
         createdAt: data.createdAt ?? 0,
     };
 }
@@ -222,38 +205,13 @@ function docToDeadline(id: string, data: DeadlineDocData): Deadline {
 
 let authUnsub: (() => void) | null = null;
 let modulesUnsub: (() => void) | null = null;
-let deadlinesUnsub: (() => void) | null = null;
 let listeningUid: string | null = null;
-const seededUids = new Set<string>();
-
-/**
- * Write the example modules + deadlines for a brand-new user the first time
- * both collections come back empty. Idempotent per uid and per document id.
- */
-async function seedIfEmpty(uid: string): Promise<void> {
-    const [modSnap, deadSnap] = await Promise.all([
-        getDocs(modulesCol(uid)),
-        getDocs(deadlinesCol(uid)),
-    ]);
-    if (!modSnap.empty || !deadSnap.empty) return;
-
-    await Promise.all([
-        ...EXAMPLE_MODULES.map((m) =>
-            setDoc(moduleDoc(uid, m.id), moduleToDoc(m)),
-        ),
-        ...EXAMPLE_DEADLINES.map((d) =>
-            setDoc(deadlineDoc(uid, d.id), deadlineToDoc(d)),
-        ),
-    ]);
-}
 
 export const useAcademicStore = create<AcademicState>()((set, get) => ({
     user: null,
     authReady: false,
     modules: [],
-    deadlines: [],
     modulesLoaded: false,
-    deadlinesLoaded: false,
     error: null,
 
     initAuth: () => {
@@ -277,7 +235,7 @@ export const useAcademicStore = create<AcademicState>()((set, get) => ({
         get().stopListening();
         listeningUid = uid;
 
-        set({ modulesLoaded: false, deadlinesLoaded: false, error: null });
+        set({ modulesLoaded: false, error: null });
 
         modulesUnsub = onSnapshot(
             query(modulesCol(uid), orderBy("createdAt")),
@@ -292,44 +250,13 @@ export const useAcademicStore = create<AcademicState>()((set, get) => ({
             (err: FirestoreError) =>
                 set({ error: err.message, modulesLoaded: true }),
         );
-
-        deadlinesUnsub = onSnapshot(
-            query(deadlinesCol(uid), orderBy("endDate")),
-            (snap) => {
-                set({
-                    deadlines: snap.docs.map((d) =>
-                        docToDeadline(d.id, d.data() as DeadlineDocData),
-                    ),
-                    deadlinesLoaded: true,
-                });
-            },
-            (err: FirestoreError) =>
-                set({ error: err.message, deadlinesLoaded: true }),
-        );
-
-        // First sign-in on an empty account: load the example data once.
-        if (!seededUids.has(uid)) {
-            seededUids.add(uid);
-            void seedIfEmpty(uid).catch((e: unknown) =>
-                set({
-                    error: e instanceof Error ? e.message : "Failed to seed data",
-                }),
-            );
-        }
     },
 
     stopListening: () => {
         modulesUnsub?.();
-        deadlinesUnsub?.();
         modulesUnsub = null;
-        deadlinesUnsub = null;
         listeningUid = null;
-        set({
-            modules: [],
-            deadlines: [],
-            modulesLoaded: false,
-            deadlinesLoaded: false,
-        });
+        set({ modules: [], modulesLoaded: false });
     },
 
     logout: async () => {
@@ -401,36 +328,16 @@ export const useAcademicStore = create<AcademicState>()((set, get) => ({
         };
         await setDoc(moduleDoc(uid, moduleId), moduleToDoc(updated));
     },
-
-    // ── Deadline mutations ───────────────────────────────────────────────────
-
-    addDeadline: async (deadline) => {
-        const uid = get().user?.uid;
-        if (!uid) return;
-        const id = crypto.randomUUID();
-        await setDoc(
-            deadlineDoc(uid, id),
-            deadlineToDoc({ ...deadline, createdAt: Date.now() }),
-        );
-    },
-
-    removeDeadline: async (id) => {
-        const uid = get().user?.uid;
-        if (!uid) return;
-        await deleteDoc(deadlineDoc(uid, id));
-    },
-
-    toggleSubComponent: async (deadlineId, subId) => {
-        const uid = get().user?.uid;
-        if (!uid) return;
-        const current = get().deadlines.find((d) => d.id === deadlineId);
-        if (!current) return;
-        const updated: Deadline = {
-            ...current,
-            subComponents: current.subComponents.map((s) =>
-                s.id === subId ? { ...s, isCompleted: !s.isCompleted } : s,
-            ),
-        };
-        await setDoc(deadlineDoc(uid, deadlineId), deadlineToDoc(updated));
-    },
 }));
+
+// ── Derived selectors ────────────────────────────────────────────────────────
+
+/**
+ * The read-only Gantt timeline, transformed from the live modules array.
+ * Re-derives only when the modules snapshot changes, so any module/assessment
+ * date edit or deletion updates the timeline reactively and simultaneously.
+ */
+export function useTimelineDeadlines(): Deadline[] {
+    const modules = useAcademicStore((s) => s.modules);
+    return useMemo(() => modulesToTimeline(modules), [modules]);
+}
