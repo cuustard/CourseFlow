@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAcademicStore } from "@/store/useAcademicStore";
 import { nextUrgentMoment } from "@/lib/timelineUtils";
@@ -19,11 +19,20 @@ export default function TimelineView() {
     const deadlinesLoaded = useAcademicStore((s) => s.deadlinesLoaded);
     const addDeadline = useAcademicStore((s) => s.addDeadline);
 
+    const moduleParam = searchParams.get("module");
+
     const [showForm, setShowForm] = useState(false);
     const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
     const [moduleFilter, setModuleFilter] = useState<string>(
-        () => searchParams.get("module") ?? "all",
+        () => moduleParam ?? "all",
     );
+
+    // Keep the module filter in sync with the `?module=` deep link so that
+    // "View on timeline" actions land on the right module even when the
+    // timeline page is already mounted (e.g. browser back/forward navigation).
+    useEffect(() => {
+        setModuleFilter(moduleParam ?? "all");
+    }, [moduleParam]);
 
     const filtered = useMemo(() => {
         return deadlines
